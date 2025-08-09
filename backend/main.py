@@ -4,7 +4,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from dotenv import load_dotenv
-
+from typing import Optional
 load_dotenv()
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 if not GOOGLE_API_KEY:
@@ -14,7 +14,7 @@ genai.configure(api_key=GOOGLE_API_KEY)
 model = genai.GenerativeModel('gemini-1.5-flash')
 
 app = FastAPI(
-    title="PromptCraft MVP API",
+    title="Construct MVP API",
     description="API for generating optimized prompts for LLMs.",
     version="0.1.0",
 )
@@ -29,6 +29,7 @@ app.add_middleware(
 
 class PromptRequest(BaseModel):
     use_case: str
+    model: str | None = None 
 
 class GeneratedPrompt(BaseModel):
     persona: str
@@ -40,21 +41,33 @@ class GeneratedPrompt(BaseModel):
 class PromptResponse(BaseModel):
     structured_prompt: GeneratedPrompt
 
+class RunPromptRequest(BaseModel):
+    structured_prompt: GeneratedPrompt
+
+class RunPromptResponse(BaseModel):
+    output: str
+def get_model(name: str | None):
+    name = name or "gemini-1.5-flash"
+    return genai.GenerativeModel(name)
 META_PROMPT = """
-You are an expert-level AI Prompt Engineer named 'PromptCraft'. Your sole function is to generate a detailed, structured, and optimized prompt for another AI model based on a user's simple use case.
+You are an expert-level AI Prompt Engineer named 'Construct'. Your sole function is to generate a detailed, structured, and optimized prompt for another AI model based on a user's simple use case.
 
 When you receive a use case, you MUST generate a prompt in a structured JSON format. The JSON object must contain exactly these five keys: "persona", "task", "context", "format", "constraints".
 
 - persona: Define the persona the AI should adopt.
 - task: Clearly and concisely state the primary objective.
-- context: Provide background with [User to insert ...] placeholders.
+- context: Provide background with placeholders that follow THIS EXACT SYNTAX: [User to insert ...]. Do not use any other bracket format.
 - format: Specify the exact output format.
-- constraints: Define the rules and limitations.
+- constraints: Define the rules and limitations. If you need variable values here, also use the same placeholder syntax.
 
-Analyze the following user use case and generate the structured JSON output. Do NOT include any other text or explanations outside of the JSON object.
+Rules:
+- Output ONLY the JSON object, no extra text.
+- Use at least one placeholder in "context".
+- Placeholders MUST look like: [User to insert Company name], [User to insert Word count], etc. No bare [Word] placeholders.
 
 USER USE CASE:
 """
+
 
 @app.post("/generate-prompt", response_model=PromptResponse)
 async def generate_prompt(request: PromptRequest):
@@ -66,7 +79,8 @@ async def generate_prompt(request: PromptRequest):
         generation_config = genai.types.GenerationConfig(
             response_mime_type="application/json"
         )
-        resp = await model.generate_content_async(full_prompt, generation_config=generation_config)
+        mdl = get_model(request.model)
+        resp = await mdl.generate_content_async(full_prompt, generation_config=generation_config)
 
         try:
             data = json.loads(resp.text)
@@ -85,7 +99,35 @@ async def generate_prompt(request: PromptRequest):
     except Exception as e:
         print(f"An error occurred: {e}")
         raise HTTPException(status_code=500, detail="Failed to generate prompt from the model.")
+    
+def build_execution_prompt(sp: GeneratedPrompt) -> str:
+    return f"""
+{sp.persona}
+
+Your task: {sp.task}
+
+Context:
+{sp.context}
+
+Constraints:
+{sp.constraints}
+
+Output format:
+{sp.format}
+
+Now produce the output.
+""".strip()
+
+@app.post("/run-prompt", response_model=RunPromptResponse)
+async def run_prompt(req: RunPromptRequest):
+    try:
+        prompt = build_execution_prompt(req.structured_prompt)
+        resp = await model.generate_content_async(prompt)
+        return {"output": resp.text}
+    except Exception as e:
+        print(e)
+        raise HTTPException(status_code=500, detail="Failed to run prompt.")
 
 @app.get("/")
 def read_root():
-    return {"status": "PromptCraft API is running!"}
+    return {"status": "Construct API is running!"}

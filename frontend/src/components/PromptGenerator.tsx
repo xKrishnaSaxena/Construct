@@ -5,6 +5,11 @@ import { Textarea } from "@/components/ui/textarea";
 import { Copy, Sparkles, Check, Edit, Save, X } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { PromptStructure, PromptResponse } from "@/types";
+import { extractPlaceholders, fillPlaceholders } from "@/lib/placeholders";
+import { saveToHistory } from "@/lib/history";
+import { templates } from "@/data/templates";
+import { exportJSON, exportMarkdown } from "@/lib/exporters";
+import { lintPrompt } from "@/lib/lint";
 
 const API_BASE = "http://localhost:8000";
 const PromptGenerator = () => {
@@ -15,8 +20,13 @@ const PromptGenerator = () => {
   const [copiedSection, setCopiedSection] = useState<string | null>(null);
   const [editingSection, setEditingSection] = useState<string | null>(null);
   const [editValues, setEditValues] = useState<Partial<PromptStructure>>({});
+  const [testValues, setTestValues] = useState<Record<string, string>>({});
+  const [testOutput, setTestOutput] = useState<string>("");
+  const [model, setModel] = useState("gemini-1.5-flash");
   const { toast } = useToast();
-
+  const placeholders = generatedPrompt
+    ? extractPlaceholders(generatedPrompt.context)
+    : [];
   const generatePrompt = async () => {
     if (!userInput.trim()) {
       toast({
@@ -35,7 +45,7 @@ const PromptGenerator = () => {
       const res = await fetch(`${API_BASE}/generate-prompt`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ use_case: userInput }),
+        body: JSON.stringify({ use_case: userInput, model }),
       });
 
       if (!res.ok) {
@@ -45,6 +55,7 @@ const PromptGenerator = () => {
 
       const data: PromptResponse = await res.json();
       setGeneratedPrompt(data.structured_prompt);
+      saveToHistory(data.structured_prompt);
       toast({
         title: "Prompt generated",
         description: "Your optimized prompt is ready.",
@@ -122,6 +133,21 @@ const PromptGenerator = () => {
   const handleEditChange = (section: string, value: string) => {
     setEditValues({ ...editValues, [section]: value });
   };
+  async function runTest() {
+    if (!generatedPrompt) return;
+    const filledContext = fillPlaceholders(generatedPrompt.context, testValues);
+
+    const res = await fetch(`${API_BASE}/run-prompt`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        structured_prompt: { ...generatedPrompt, context: filledContext },
+      }),
+    });
+    if (!res.ok) throw new Error("Run failed");
+    const data = await res.json();
+    setTestOutput(data.output);
+  }
   return (
     <div className="w-full max-w-4xl mx-auto space-y-8">
       {/* Input Section */}
@@ -138,6 +164,32 @@ const PromptGenerator = () => {
           </div>
 
           <div className="space-y-4">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              {templates.map((t) => (
+                <Button
+                  key={t.id}
+                  variant="secondary"
+                  onClick={() => setUserInput(t.use_case)}
+                >
+                  {t.label}
+                </Button>
+              ))}
+            </div>
+            <div className="flex items-center gap-3">
+              <label className="text-sm text-muted-foreground">Model:</label>
+              <select
+                className="border rounded-md px-3 py-2 text-sm"
+                value={model}
+                onChange={(e) => setModel(e.target.value)}
+              >
+                <option value="gemini-1.5-flash">
+                  Gemini 1.5 Flash (fast)
+                </option>
+                <option value="gemini-1.5-pro">
+                  Gemini 1.5 Pro (higher quality)
+                </option>
+              </select>
+            </div>
             <Textarea
               placeholder="e.g., a marketing email for a new product launch"
               value={userInput}
@@ -176,19 +228,35 @@ const PromptGenerator = () => {
               <h3 className="text-xl font-semibold text-foreground bg-gradient-to-r from-foreground to-foreground/80 bg-clip-text">
                 Your Optimized Prompt
               </h3>
-              <Button
-                onClick={copyFullPrompt}
-                variant="outline"
-                size="sm"
-                className="gap-2 bg-background/80 backdrop-blur-sm border-border/60 hover:bg-accent/80 hover:shadow-glow transition-all duration-300"
-              >
-                {copiedSection === "Full prompt" ? (
-                  <Check className="w-4 h-4 text-green-600" />
-                ) : (
-                  <Copy className="w-4 h-4" />
-                )}
-                Copy All
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button
+                  onClick={copyFullPrompt}
+                  variant="outline"
+                  size="sm"
+                  className="gap-2 bg-background/80 backdrop-blur-sm border-border/60 hover:bg-accent/80 hover:shadow-glow transition-all duration-300"
+                >
+                  {copiedSection === "Full prompt" ? (
+                    <Check className="w-4 h-4 text-green-600" />
+                  ) : (
+                    <Copy className="w-4 h-4" />
+                  )}
+                  Copy All
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => exportJSON(generatedPrompt!)}
+                >
+                  JSON
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => exportMarkdown(generatedPrompt!)}
+                >
+                  MD
+                </Button>
+              </div>
             </div>
 
             <div className="grid gap-6">
@@ -275,6 +343,64 @@ const PromptGenerator = () => {
           </div>
         </Card>
       )}
+      {generatedPrompt &&
+        (() => {
+          const { score, issues } = lintPrompt(generatedPrompt);
+          return (
+            <Card className="p-4 space-y-2">
+              <div className="font-semibold">Quality score: {score}/100</div>
+              <ul className="list-disc pl-5 text-sm">
+                {issues.map((i, idx) => (
+                  <li
+                    key={idx}
+                    className={
+                      i.severity === "error"
+                        ? "text-red-600"
+                        : i.severity === "warn"
+                        ? "text-yellow-600"
+                        : "text-muted-foreground"
+                    }
+                  >
+                    {i.message}
+                  </li>
+                ))}
+              </ul>
+            </Card>
+          );
+        })()}
+      <Card className="p-6 space-y-4">
+        <div className="flex items-center justify-between">
+          <h4 className="text-lg font-semibold">Fill placeholders & test</h4>
+          <Button onClick={runTest} disabled={!placeholders.length}>
+            Run Test
+          </Button>
+        </div>
+        {!placeholders.length ? (
+          <p className="text-sm text-muted-foreground">
+            No placeholders found in context.
+          </p>
+        ) : (
+          <div className="grid gap-3">
+            {placeholders.map((ph) => (
+              <div key={ph.key} className="grid gap-1">
+                <label className="text-sm font-medium">{ph.label}</label>
+                <Textarea
+                  value={testValues[ph.key] ?? ""}
+                  onChange={(e) =>
+                    setTestValues((v) => ({ ...v, [ph.key]: e.target.value }))
+                  }
+                  placeholder={`Enter ${ph.label}`}
+                />
+              </div>
+            ))}
+          </div>
+        )}
+        {!!testOutput && (
+          <div className="rounded-md border p-4 whitespace-pre-wrap text-sm">
+            {testOutput}
+          </div>
+        )}
+      </Card>
     </div>
   );
 };
