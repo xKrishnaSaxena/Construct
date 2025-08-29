@@ -134,5 +134,3 @@ Use tools like Postman or curl to test endpoints.
 
 
 ---
-
-Built with ❤️ by [Your Name]. For questions, open an issue.
