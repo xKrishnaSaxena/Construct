@@ -4,7 +4,14 @@
 
 Construct is an MVP (Minimum Viable Product) application designed to generate optimized, structured prompts for Large Language Models (LLMs) based on simple user use cases. It leverages Google's Gemini API to create detailed prompts in a standardized format, making it easier to produce high-quality AI outputs. The project includes a FastAPI backend for prompt generation and execution, and a React frontend for user interaction.
 
+## 📽️ Walkthrough
+
+[walkthrough](https://github.com/user-attachments/assets/fd3501e4-29a0-412b-9204-cd7942c08609)
+
+---
+
 Key benefits:
+
 - Transforms vague ideas into professional, structured prompts.
 - Supports editing, testing, and exporting prompts.
 - Includes linting for prompt quality assessment.
@@ -38,11 +45,13 @@ Key benefits:
 ### Backend Setup
 
 1. Clone the repository:
+
    ```
    git clone https://github.com/xKrishnaSaxena/Construct
    ```
 
 2. Create a virtual environment and install dependencies:
+
    ```
    python -m venv venv
    source venv/bin/activate  # On Windows: venv\Scripts\activate
@@ -50,6 +59,7 @@ Key benefits:
    ```
 
 3. Create a `.env` file in the backend directory:
+
    ```
    GOOGLE_API_KEY=your_google_api_key_here
    ```
@@ -63,14 +73,17 @@ Key benefits:
 ### Frontend Setup
 
 1. Navigate to the frontend directory:
+
    ```
    cd ../frontend
    ```
 
 2. Install dependencies:
+
    ```
    npm install  # Or yarn install
    ```
+
    (Assumes dependencies like react, @shadcn/ui, lucide-react, etc., are in package.json. If not, add them manually.)
 
 3. Run the development server:
@@ -86,10 +99,12 @@ Note: The frontend assumes the backend is running at `http://localhost:8000`. Up
 ### Backend API
 
 - **Generate Prompt** (`POST /generate-prompt`):
+
   - Body: `{ "use_case": "your use case here", "model": "gemini-1.5-flash" }` (model is optional).
   - Response: Structured prompt JSON.
 
 - **Run Prompt** (`POST /run-prompt`):
+
   - Body: `{ "structured_prompt": { ... } }` (the generated prompt object).
   - Response: `{ "output": "generated text" }`.
 
@@ -110,6 +125,7 @@ Use tools like Postman or curl to test endpoints.
 ## Configuration
 
 - **Environment Variables**:
+
   - `GOOGLE_API_KEY`: Required for Gemini API access.
 
 - **Customizing Templates**: Edit `templates` array in `src/data/templates.ts`.
@@ -131,6 +147,5 @@ Use tools like Postman or curl to test endpoints.
 - **CORS Errors**: The backend allows all origins; adjust if needed.
 - **Generation Failures**: Verify Gemini model availability and API quota.
 - **Frontend Errors**: Ensure all dependencies (e.g., use-toast hook) are installed.
-
 
 ---
